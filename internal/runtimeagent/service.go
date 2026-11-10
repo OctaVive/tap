@@ -93,14 +93,18 @@ func (a *Agent) Serve(ctx context.Context, poller Poller, reconciler Reconciler)
 			return ErrLedger
 		}
 		delay = 100 * time.Millisecond
+		rejected := false
 		if command != nil && (!incident || command.Operation == "stop" || command.Operation == "remove") {
 			result, executeErr := a.Execute(ctx, *command)
+			rejected = executeErr != nil
 			if executeErr != nil && result.CommandID == "" && lastDenied != command.ID {
 				os.Stderr.WriteString("runtime_command_preflight_denied\n")
 				lastDenied = command.ID
 			}
 		}
-		if command == nil || incident {
+		// A controller repeatedly returning the same invalid command must not
+		// turn an authorization denial into an unbounded metadata/CPU hot loop.
+		if command == nil || incident || rejected {
 			if !wait() {
 				break
 			}

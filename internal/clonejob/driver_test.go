@@ -122,7 +122,9 @@ func TestDriverFencesHandoffAndConfirmsCleanup(t *testing.T) {
 			b.failCleanup = scenario == "cleanup-failure"
 			d := Driver{Store: s, Backend: b}
 			timeout := 100 * time.Millisecond
-			if scenario == "policy-timeout" {
+			if scenario == "policy-timeout" || scenario == "success" {
+				// The successful path commits durable SQLite state. Its test
+				// deadline must allow real fsync latency on shared lab storage.
 				timeout = 5 * time.Second
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), timeout)

@@ -35,7 +35,7 @@ The current top-level ledger conservatively keeps these gates FAIL or NOT_RUN.
 
 | Gate | Required cases before PASS |
 |---|---|
-| R01 — measured capability | Supported complete profile passes with observed cgroups, UID/GID maps, private namespaces, actual MAC/seccomp, storage/log quotas, network denial and relay connectivity. Each missing control refuses before candidate changes. Tampered/stale/wrong-worker reports and daemon restart refuse readiness. **Current complete-profile feasibility fails.** |
+| R01 — measured capability | Supported complete profile passes with observed cgroups, UID/GID maps, private namespaces, actual MAC/seccomp, storage/log quotas, network denial and relay connectivity. Each missing control refuses before candidate changes. Tampered/stale/wrong-worker reports and daemon restart refuse readiness. Earlier complete-profile failure is retained; later development measured probes pass, but full R01 variants remain unexecuted. |
 | R02 — SEC-16 | Real-engine zero-mutation snapshots for every field/signature/worker/incarnation/app/expiry/policy/generation/approval/certificate/replay denial, including concurrent duplicates and agent restart. Software tests alone are insufficient. |
 | R03 — crash and revocation | Kill agent at every durable-intent/create/start/inspect/result/cleanup boundary; lose engine responses; expire/revoke during operations. One effect per identity, no stale readiness, confirmed owned cleanup or explicit uncertain incident/reservation. |
 | R04 — runtime image delivery | Exact M07-admitted source/digest/platform reaches actual runtime through the private mTLS path. Cross-worker/revoked/stale grants, bad digests/platform, redirect, partial/corrupt/oversized archives, unpacked-storage exhaustion and import failures refuse and preserve correct charges. |
@@ -103,3 +103,25 @@ Only after these diagnostics succeed, run the actual separate process/mTLS/M07
 lifecycle and all constituent R01–R10 cases listed above. No NOT_RUN, SKIP or
 component-only substitute is accepted. Freeze final source and regenerate the
 manifest after implementation; the prior manifest is historical until refreshed.
+
+## Post-implementation validation — 2026-11-09 recovery increment
+
+Current execution order and explicit bounds are in [execution-plan.md](execution-plan.md).
+The [constituent catalog](testing/constituents.json) is the initial required coverage
+checklist; trigger-specific drivers remain mandatory. No top-level gate can pass
+while a constituent is absent, skipped, unexecuted or has unverified evidence.
+
+| Check | Executed result and required remaining proof |
+|---|---|
+| Software regression | Full Go tests and vet pass in `/var/tmp/tap-m09/{full-tests,vet}-20261109-latest.log`. The clonejob success fixture allows 5s for durable fsync; negative deadline checks remain unchanged. |
+| Recovery concurrency | runtimeagent/runtimeengine/runtimeisolation race checks pass in `recovery-race-20261109.log`. Exact probe configuration, changed image/entrypoint/service/labels and duplicate network fault cases pass. These are components only. |
+| Mounted engine files | Kernel mountinfo now must show unique readonly `/etc/hosts`, `/etc/hostname`, `/etc/resolv.conf` mounts. Component cases cover writable, missing, ambiguous and misleading flags. Actual VM proof remains necessary. |
+| Decoder/reporting | Five-second/two-worker command fuzz passes (128 executions); Python reporter/serial/restart/crash proof tests pass. The reporter requires a hashed constituent catalog as well as top-level gates. Synthetic fixtures never establish runtime acceptance. |
+| Fresh real handoff | Selected `TestRealM08Pipeline` Dockerfile/Compose/denial cases pass in `m08.1794250511322523515`; guest parser corpus/fuzz ran inside actual VMs. Fresh immutable admissions and opaque artifacts are exported in `m07-handoff-20261109-3`. Trust/firewall restored and guest disks absent. This selected development run does not substitute for complete frozen M06/M07/M08 regression. |
+| Same-ledger restart | Run `process-pair.py --scenario agent-restart`; require different real PIDs, identical per-app object counts with live candidate, post-restart inspect/log/stop/remove, signed final probe, zero containers/three builtin networks per app and zero QEMU exit codes. PASS in process-pair-16: agent PID 989→1791, two live services preserved, final per-app inventory 0 containers/3 builtin networks, both QEMU exits zero. Pair15 failed on the private controller tty permission; its logs are retained. |
+| Abandoned probe | PASS in process-pair-17 on unchanged source; rerun `--scenario probe-crash` after final freeze. Freeze the owned agent while observing a pending probe with two persisted exact IDs, kill only that agent, restart on the same live VM/ledger. Require durable uncertain result, successful subsequent lifecycle and final clean inventory. Unknown engine objects must remain untouched and block release. No simulated engine substitutes. |
+
+Retain pair13/14 and the failed handoff refreshes. Generated disk retirement is
+recorded separately; preserved logs and metadata are never promoted into passing
+evidence. Keep M09 INCOMPLETE and regenerate final source/evidence manifests only
+after the complete required acceptance run.

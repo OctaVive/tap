@@ -20,4 +20,11 @@ Status: **In progress; NOT PASSED**.
 - [Runtime execution contract](../../specifications/runtime-execution.md)
 - [deployment agent](../../specifications/deployment-agent.md)
 
-The current code increment has 137 passing named software cases across the changed runtime/artifact packages. Full runtime acceptance is incomplete: the required ledger has 1 FAIL and 9 NOT_RUN. Missing measured enforcement refuses deployment. No production runtime service is wired or enabled. Shared contracts stay in `../../specifications/`.
+The implementation includes app-scoped provisioning, measured enforcement,
+durable authorization and separate agent/controller process wiring. Real single-
+and two-service development lifecycles have passed; full runtime acceptance is
+incomplete (R01 FAIL, R02–R10 NOT_RUN). No accepted production runtime template
+has been delivered. Earlier software counts and feasibility failures remain
+historical evidence. See [current execution plan](execution-plan.md),
+[operational handoff](remaining-work.md) and the
+[required constituent catalog](testing/constituents.json) for current work.

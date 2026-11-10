@@ -46,8 +46,78 @@ func denied(address string) bool {
 	conn.Close()
 	return false
 }
+
+func ipv6SocketPositive(ip net.IP) bool {
+	if ip.To4() != nil || ip.To16() == nil {
+		return false
+	}
+	listener, err := net.ListenTCP("tcp6", &net.TCPAddr{IP: ip, Port: 0})
+	if err != nil {
+		return false
+	}
+	defer listener.Close()
+	deadline := time.Now().Add(150 * time.Millisecond)
+	listener.SetDeadline(deadline)
+	done := make(chan bool, 1)
+	go func() {
+		c, err := listener.AcceptTCP()
+		if err != nil {
+			done <- false
+			return
+		}
+		defer c.Close()
+		c.SetDeadline(deadline)
+		_, err = c.Write([]byte("tap-v6"))
+		done <- err == nil
+	}()
+	c, err := net.DialTimeout("tcp6", listener.Addr().String(), 150*time.Millisecond)
+	if err != nil {
+		listener.Close()
+		<-done
+		return false
+	}
+	defer c.Close()
+	c.SetDeadline(deadline)
+	var buffer [6]byte
+	_, err = io.ReadFull(c, buffer[:])
+	return err == nil && string(buffer[:]) == "tap-v6" && <-done
+}
+
+func privateIPv6() (bool, bool) {
+	found := false
+	deadline := time.Now().Add(600 * time.Millisecond)
+	for {
+		interfaces, err := net.Interfaces()
+		if err != nil || len(interfaces) > 32 {
+			return false, false
+		}
+		for _, iface := range interfaces {
+			if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+				continue
+			}
+			addresses, err := iface.Addrs()
+			if err != nil || len(addresses) > 32 {
+				return false, false
+			}
+			for _, address := range addresses {
+				ip, _, err := net.ParseCIDR(address.String())
+				if err == nil && ip.To4() == nil && ip.IsPrivate() && ip.IsGlobalUnicast() {
+					found = true
+					if ipv6SocketPositive(ip) {
+						return true, true
+					}
+				}
+			}
+		}
+		if time.Now().After(deadline) {
+			return found, false
+		}
+		time.Sleep(40 * time.Millisecond)
+	}
+}
 func probe() map[string]bool {
 	r := map[string]bool{"host_ipv4_denied": denied("10.88.0.1:9099"), "host_ipv6_denied": denied("[fd00:88::1]:9099"), "metadata_denied": denied("169.254.169.254:80"), "management_denied": denied("10.88.0.1:9443"), "external_denied": denied("1.1.1.1:443")}
+	r["ipv6_private_address"], r["ipv6_private_positive"] = privateIPv6()
 	for _, path := range []string{"/etc/hosts", "/etc/hostname", "/etc/resolv.conf"} {
 		f, err := os.OpenFile(path, os.O_WRONLY, 0)
 		if err == nil {

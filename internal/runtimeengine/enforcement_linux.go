@@ -77,12 +77,13 @@ func (e *MeasuredEnforcement) Network(ctx context.Context, c runtimeagent.Comman
 		return runtimeagent.ErrDenied
 	}
 	var network struct {
-		ID       string `json:"Id"`
-		Internal bool
-		Driver   string
-		Labels   map[string]string
+		ID         string `json:"Id"`
+		Internal   bool
+		EnableIPv6 bool
+		Driver     string
+		Labels     map[string]string
 	}
-	if e.client.call(ctx, "GET", "/networks/"+id, nil, &network) != nil || network.ID != id || !network.Internal || network.Driver != "bridge" || !equal(network.Labels, labels(c, "")) {
+	if e.client.call(ctx, "GET", "/networks/"+id, nil, &network) != nil || network.ID != id || !network.Internal || !network.EnableIPv6 || network.Driver != "bridge" || !equal(network.Labels, labels(c, "")) {
 		return runtimeagent.ErrDenied
 	}
 	_, err := e.backendReport(ctx)

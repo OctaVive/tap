@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Opt-in isolated M07 pipeline lab; never enables production services."""
-import argparse,hashlib,importlib.machinery,json,os,re,subprocess,time
+import argparse,hashlib,importlib.machinery,json,os,re,shutil,subprocess,time
 from pathlib import Path
 repo=Path(__file__).resolve().parents[2]
 clone=importlib.machinery.SourceFileLoader('m06',str(repo/'infra/clone/lab.py')).load_module()
@@ -13,6 +13,13 @@ def main():
  ap=argparse.ArgumentParser();ap.add_argument('--lab',required=True);ap.add_argument('--tools',required=True);ap.add_argument('--ingest-config',required=True);ap.add_argument('--debug',action='store_true');ap.add_argument('--cases');args=ap.parse_args()
  if os.geteuid()!=0 or os.environ.get('M07_LAB_APPROVED')!='YES-I-AUTHORIZE-BUILD-LAB':ap.error('root and explicit M07 lab opt-in required')
  if subprocess.check_output(['systemd-detect-virt'],text=True).strip() not in ('kvm','qemu','vmware','microsoft','oracle'):raise RuntimeError('disposable host required')
+ # A builder and scanner each preallocate 10GiB. Keep physical reservations,
+ # template generation and an 8GiB management reserve available before startup.
+ if shutil.disk_usage('/var/lib/orchestrator-builder').free < 32 << 30:
+  raise RuntimeError('at least 32GiB free required before build/scan lab; retire completed disposable artifacts first')
+ ns=Path('/run/netns')
+ if not ns.is_dir() or ns.is_symlink() or ns.stat().st_uid!=0 or ns.stat().st_mode&0o022:
+  raise RuntimeError('prepare trusted root-owned /run/netns mode 0755 before build/scan lab')
  lab=Path(args.lab);clone.helper.trusted(lab);clone.helper.trusted(repo)
  os.umask(0o077);work=lab/(('m08.' if os.environ.get('M08_LAB')=='1' else 'm07.')+str(time.time_ns()));work.mkdir(mode=0o700);print('M08 evidence:' if os.environ.get('M08_LAB')=='1' else 'M07 evidence:',work,flush=True)
  source=sources();log=(work/'run.log').open('w');run=lambda argv,**kw:subprocess.run(argv,check=True,stdout=log,stderr=log,**kw)
@@ -58,7 +65,7 @@ def main():
   else:raise RuntimeError('fixture startup timeout')
   capture=subprocess.Popen([str(Path(args.tools)/'pcap/usr/bin/tcpdump'),'-Z','root','-i','any','-U','-c','20000','-w',str(work/'traffic.pcap'),'net 192.0.2.0/30 or net 11.0.0.0/24'],stdout=log,stderr=log,env=dict(os.environ,LD_LIBRARY_PATH=str(Path(args.tools)/'pcap/usr/lib/x86_64-linux-gnu')))
   env=dict(os.environ,M04_DISPOSABLE_HOST='YES-I-AUTHORIZE-REAL-KVM',M07_DISPOSABLE_HOST='YES-I-AUTHORIZE-BUILD-LAB',M04_HOST_CONFIG=str(work/'builder/backend.json'),M07_INGEST_CONFIG=str(work/'scanner/backend.json'),M07_CONTROL=str(work/'control.sock'),M07_ARTIFACT_ROOT=str(work/'artifacts'),M07_TOOLS_LOCK=str(repo/'infra/build/tools.lock.json'),M07_TRIVY=str(Path(args.tools)/'trivy/trivy'))
-  result=subprocess.run([str(bins['pipeline.test']),'-test.v','-test.timeout=10m','-test.run',('^(TestRealM08Pipeline|TestRealM07Pipeline)$' if os.environ.get('M08_LAB')=='1' else '^TestRealM07Pipeline$') if not args.cases else ('^TestRealM08Pipeline/' if os.environ.get('M08_LAB')=='1' else '^TestRealM07Pipeline/')+'('+args.cases.replace(',','|')+')$'],cwd=repo,env=env,stdout=log,stderr=log);log.flush()
+  result=subprocess.run([str(bins['pipeline.test']),'-test.v','-test.failfast','-test.timeout=10m','-test.run',('^(TestRealM08Pipeline|TestRealM07Pipeline)$' if os.environ.get('M08_LAB')=='1' else '^TestRealM07Pipeline$') if not args.cases else ('^TestRealM08Pipeline/' if os.environ.get('M08_LAB')=='1' else '^TestRealM07Pipeline/')+'('+args.cases.replace(',','|')+')$'],cwd=repo,env=env,stdout=log,stderr=log);log.flush()
   events=[json.loads(line) for line in (work/'canary.jsonl').read_text().splitlines()] if (work/'canary.jsonl').exists() else []
   forbidden=[e for e in events if e.get('listener')=='denied' or 'remote-target' in e.get('path','')];registry=[e for e in events if e.get('kind')=='registry']
   evidence={'debug':args.debug,'development_cases':args.cases,'exit_code':result.returncode,'source_revision':subprocess.check_output(['git','rev-parse','HEAD'],cwd=repo,text=True).strip(),'source_sha256':source,'source_unchanged':source==sources(),'binary_sha256':{k:clone.digest(v) for k,v in bins.items()},'builder_template':config['digest'],'scanner_template':scanner['digest'],'database_image':scanner['ingest_database_digest'],'forbidden_arrivals':len(forbidden),'registry_requests':len(registry),'skipped':'--- SKIP:' in (work/'run.log').read_text()}

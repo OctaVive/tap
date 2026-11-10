@@ -8,61 +8,61 @@
         "docs/project/PH1/P1M09/testing/runtime-feasibility.log",
         "docs/project/PH1/P1M09/testing/backend-factory/observation.json"
       ],
-      "reason": "Complete restricted-profile fixture did not start; current runtime supplement is not accepted. Final-source backend identity diagnostic passes only its narrow scope; full measured enforcement/service integration remains incomplete."
+      "reason": "Historical full-profile failure retained. Later development measured probes pass; complete final-profile positive/negative variants and accepted host/VM integration remain unexecuted."
     },
     {
       "id": "R02",
       "status": "NOT_RUN",
       "evidence": [],
-      "reason": "Required full real-agent/runtime integration is not implemented/executed."
+      "reason": "Actual VM development checks pass for all 16 signed fields, bad signature, signed wrong worker and signed expiry with independent zero-mutation snapshots. Remaining protocol/policy/replay/concurrency constituents and final accepted profile remain unexecuted."
     },
     {
       "id": "R03",
       "status": "NOT_RUN",
       "evidence": [],
-      "reason": "Required full real-agent/runtime integration is not implemented/executed."
+      "reason": "Real same-ledger restart, recorded-probe crash, and idle approval/admission/scan-policy development variants pass. Full frozen-source crash/lost-response/revocation constituent matrix remains incomplete."
     },
     {
       "id": "R04",
       "status": "NOT_RUN",
       "evidence": [],
-      "reason": "Required full real-agent/runtime integration is not implemented/executed."
+      "reason": "Fresh real M07/M08 artifacts traverse mTLS in development lifecycles; corrupt actual archives are rejected with independent image/object/reservation absence proof. Partial/redirect/platform/storage and authorization variants remain unexecuted."
     },
     {
       "id": "R05",
       "status": "NOT_RUN",
       "evidence": [],
-      "reason": "Required full real-agent/runtime integration is not implemented/executed."
+      "reason": "Real single/two-service development lifecycles and measured controls pass. Complete final-profile drift and mutation variants remain unexecuted."
     },
     {
       "id": "R06",
       "status": "NOT_RUN",
       "evidence": [],
-      "reason": "Required full real-agent/runtime integration is not implemented/executed."
+      "reason": "Private relay connectivity/removal has real development proof. Complete IPv4/IPv6 active-control attack and independent port matrix remains unexecuted."
     },
     {
       "id": "R07",
       "status": "NOT_RUN",
       "evidence": [],
-      "reason": "Required full real-agent/runtime integration is not implemented/executed."
+      "reason": "Actual accepted host/API/UI/credential/socket identity matrix remains unexecuted."
     },
     {
       "id": "R08",
       "status": "NOT_RUN",
       "evidence": [],
-      "reason": "Required full real-agent/runtime integration is not implemented/executed."
+      "reason": "Aggregate budgets and component tests exist. Actual exhaustion, restart allowance, host VM budgets and reproducible accepted profile tests remain incomplete."
     },
     {
       "id": "R09",
       "status": "NOT_RUN",
       "evidence": [],
-      "reason": "Required full real-agent/runtime integration is not implemented/executed."
+      "reason": "Real owned lifecycle and component cleanup fault cases pass in development. Complete final-source foreign object/drift/force-stop/lost-cleanup matrix remains incomplete."
     },
     {
       "id": "R10",
       "status": "NOT_RUN",
       "evidence": [],
-      "reason": "Required full real-agent/runtime integration is not implemented/executed."
+      "reason": "Process/mTLS integration and selected fresh M08 handoff pass in development. Full final-source certificate/backpressure/flood/secret/regression/freeze/cleanup acceptance remains incomplete."
     }
   ]
 }

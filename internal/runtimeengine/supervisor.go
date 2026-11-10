@@ -32,6 +32,17 @@ func (s *Supervisor) Reconcile(ctx context.Context) error {
 		leaseValid := s.Authority.Valid(ctx, s.WorkerID, s.Incarnation) == nil
 		incident := false
 		for _, original := range owners {
+			if original.Operation == "probe" {
+				// Dispatch serializes this with Execute. An abandoned probe can only
+				// remove its exact ledger-recorded objects, never restart or adopt.
+				bounded, cancel := context.WithTimeout(ctx, 20*time.Second)
+				err := s.Factory.RecoverProbe(bounded, original)
+				cancel()
+				if err != nil {
+					incident = true
+				}
+				continue
+			}
 			cleanup := original
 			cleanup.Operation = "stop"
 			cleanup.Target = original.ID

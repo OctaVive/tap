@@ -13,15 +13,57 @@ import (
 	"dev-orchestrator/internal/runtimeobservation"
 )
 
+func (e *MeasuredEnforcement) canaryService() contracts.RuntimeServiceV2 {
+	return contracts.RuntimeServiceV2{Name: "tapcanary", Image: e.config.Canary.ManifestDigest, UID: 1000, GID: 1000, Entrypoint: []string{"/runtime-canary"}, Command: []string{"serve"}, Environment: map[string]string{"GOMAXPROCS": "1", "GOMEMLIMIT": "16777216", "TAP_CANARY_CONTAINER": "1"}, Expose: []int{8080}, Resources: contracts.Resources{CPUMillis: 100, MemoryBytes: 64 << 20, PIDs: 16, TmpBytes: 8 << 20, WritableBytes: 8 << 20, LogBytes: 2 << 20}}
+}
+
+func (e *MeasuredEnforcement) recoverProbe(ctx context.Context, c runtimeagent.Command, cleanup *Engine) error {
+	resources, err := e.ledger.Resources(ctx, c.ID)
+	if err != nil {
+		return err
+	}
+	var network string
+	containers := 0
+	for _, r := range resources {
+		switch r.Kind {
+		case "network":
+			if network != "" {
+				return runtimeagent.ErrDenied
+			}
+			network = r.ID
+		case "container":
+			containers++
+		default:
+			return runtimeagent.ErrDenied
+		}
+	}
+	if containers > 1 || (containers > 0 && network == "") {
+		return runtimeagent.ErrUncertain
+	}
+	for _, r := range resources {
+		if r.Kind != "container" {
+			continue
+		}
+		want, err := Config(c, e.canaryService(), network, "tap-runtime")
+		var got ContainerConfig
+		if err != nil || r.Service != "tapcanary" || json.Unmarshal(r.Expected, &got) != nil || !equal(want, got) {
+			return runtimeagent.ErrDenied
+		}
+	}
+	remove := c
+	remove.Operation, remove.Target, remove.Spec = "remove", c.ID, nil
+	return cleanup.Remove(ctx, remove, func() error { return ctx.Err() })
+}
+
 func (e *MeasuredEnforcement) runCanary(ctx context.Context, c runtimeagent.Command, check func() error) (outcome error) {
 	if check() != nil {
 		return runtimeagent.ErrDenied
 	}
 	request := struct {
-		Name, Driver             string
-		Internal, CheckDuplicate bool
-		Labels                   map[string]string
-	}{Name: "tap-probe-" + c.ID, Driver: "bridge", Internal: true, CheckDuplicate: true, Labels: labels(c, "")}
+		Name, Driver                         string
+		Internal, EnableIPv6, CheckDuplicate bool
+		Labels                               map[string]string
+	}{Name: "tap-probe-" + c.ID, Driver: "bridge", Internal: true, EnableIPv6: true, CheckDuplicate: true, Labels: labels(c, "")}
 	var network struct {
 		ID string `json:"Id"`
 	}
@@ -53,7 +95,7 @@ func (e *MeasuredEnforcement) runCanary(ctx context.Context, c runtimeagent.Comm
 			outcome = runtimeagent.ErrUncertain
 		}
 	}()
-	service := contracts.RuntimeServiceV2{Name: "tapcanary", Image: e.config.Canary.ManifestDigest, UID: 1000, GID: 1000, Entrypoint: []string{"/runtime-canary"}, Command: []string{"serve"}, Environment: map[string]string{"GOMAXPROCS": "1", "GOMEMLIMIT": "16777216", "TAP_CANARY_CONTAINER": "1"}, Expose: []int{8080}, Resources: contracts.Resources{CPUMillis: 100, MemoryBytes: 64 << 20, PIDs: 16, TmpBytes: 8 << 20, WritableBytes: 8 << 20, LogBytes: 2 << 20}}
+	service := e.canaryService()
 	config, err := Config(c, service, network.ID, "tap-runtime")
 	if err != nil {
 		return err
@@ -103,10 +145,10 @@ func (e *MeasuredEnforcement) runCanary(ctx context.Context, c runtimeagent.Comm
 				return runtimeagent.ErrUnsupported
 			}
 			probes, err := contracts.DecodeConfiguration[map[string]bool](bytes.NewReader(body))
-			if err != nil || len(probes) != 14 {
+			if err != nil || len(probes) != 16 {
 				return runtimeagent.ErrUnsupported
 			}
-			for _, name := range []string{"tmp_writable", "run_writable", "host_ipv4_denied", "host_ipv6_denied", "metadata_denied", "management_denied", "external_denied", "readonly_hosts", "readonly_hostname", "readonly_resolv.conf", "engine_socket_absent", "agent_credentials_absent", "control_socket_absent", "systemd_socket_absent"} {
+			for _, name := range []string{"tmp_writable", "run_writable", "host_ipv4_denied", "host_ipv6_denied", "metadata_denied", "management_denied", "external_denied", "readonly_hosts", "readonly_hostname", "readonly_resolv.conf", "engine_socket_absent", "agent_credentials_absent", "control_socket_absent", "systemd_socket_absent", "ipv6_private_address", "ipv6_private_positive"} {
 				if !probes[name] {
 					return runtimeagent.ErrUnsupported
 				}

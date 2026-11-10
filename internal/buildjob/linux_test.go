@@ -21,6 +21,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -103,10 +104,16 @@ func TestRealM07Pipeline(t *testing.T) {
 		t.Skip("isolated M07 lab not enabled")
 	}
 	for _, scenario := range []string{"success", "build-timeout", "cancelled", "controller-loss", "scanner-timeout", "log-flood", "disk-exhaustion", "memory-exhaustion", "pid-exhaustion", "remote-source"} {
-		t.Run(scenario, func(t *testing.T) { runM07Pipeline(t, scenario) })
+		if !t.Run(scenario, func(t *testing.T) { runM07Pipeline(t, scenario) }) {
+			t.Fatal("stopping lab after failed scenario; reconcile cleanup before continuing")
+		}
 	}
 }
 func runM07Pipeline(t *testing.T, scenario string) {
+	var space syscall.Statfs_t
+	if err := syscall.Statfs("/var/lib/orchestrator-builder", &space); err != nil || space.Bavail*uint64(space.Bsize) < 32<<30 {
+		t.Fatal("at least 32GiB free required before each real pipeline scenario")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 	repo := "build"
@@ -467,7 +474,9 @@ func TestRealM08Pipeline(t *testing.T) {
 		t.Skip("M08 isolated lab required")
 	}
 	for _, s := range []string{"m08-dockerfile", "m08-compose", "m08-denied"} {
-		t.Run(s, func(t *testing.T) { runM07Pipeline(t, s) })
+		if !t.Run(s, func(t *testing.T) { runM07Pipeline(t, s) }) {
+			t.Fatal("stopping lab after failed scenario; reconcile cleanup before continuing")
+		}
 	}
 }
 

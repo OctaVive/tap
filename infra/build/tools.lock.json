@@ -10,12 +10,12 @@
     "archive_sha256": "c7cbe3137fb8a48a17574bede3dd6beb16742d1e9772929940fc90082c39d9c0"
   },
   "vulnerability_database": {
-    "sha256": "ed3be3de4f440d6f8c068be57b69210bed6a3015aa4930a01100c3ef4d46d836",
+    "sha256": "df53926a9cc6a579932e4163f52e8a9441d09b0e7d7aab06e09c7dc7a0c72723",
     "metadata": {
       "Version": 2,
-      "NextUpdate": "2026-10-31T07:16:25.05417423Z",
-      "UpdatedAt": "2026-10-30T07:16:25.054174501Z",
-      "DownloadedAt": "2026-10-30T12:29:02.448572098Z"
+      "NextUpdate": "2026-11-10T13:58:27.621115641Z",
+      "UpdatedAt": "2026-11-09T13:58:27.621115901Z",
+      "DownloadedAt": "2026-11-09T18:42:37.916612185Z"
     }
   },
   "rootlesskit": {

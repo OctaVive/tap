@@ -1,5 +1,20 @@
 # P1-M09 acceptance report — INCOMPLETE / NOT PASSED
 
+Current-state reconciliation (2026-11-09): **INCOMPLETE / NOT PASSED**.
+The sections below preserve earlier increments and their failures. Their missing-
+component descriptions are historical: app provisioning, concrete measured
+enforcement, durable authorization and process/mTLS wiring now exist. The newer
+frozen development batch records 26 passing constituents across 13 actual VM
+scenarios, with zero failed implemented constituents and 167 NOT_RUN. These
+include same-ledger restart and abandoned-probe recovery, idle authority changes,
+corrupt archives, signed-command denial and the two-service lifecycle. All ended
+with unchanged source, independently clean inventories and successful teardown.
+See the [bounded batch results](development-20261109/frozen-batch/results.json).
+They do not establish accepted-profile or full constituent acceptance. R01 FAIL
+and R02–R10 NOT_RUN remain unchanged. The evidence manifest is historical and
+does not match final source.
+See [execution plan](../execution-plan.md) and [handoff](../remaining-work.md).
+
 Date: 2026-10-30. **M09 is not complete and is not passed.** The implementation
 increment has passing software checks, but the required complete runtime profile
 has not passed and the real agent integration suite is unfinished. No production

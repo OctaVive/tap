@@ -173,6 +173,24 @@ func (f *Factory) Quarantine(ctx context.Context, c runtimeagent.Command) error 
 	return nil
 }
 
+// RecoverProbe is internal reconciliation, not a command protocol operation.
+// The caller holds Ledger.Dispatch, so the probe cannot still be executing.
+func (f *Factory) RecoverProbe(ctx context.Context, c runtimeagent.Command) error {
+	if c.Operation != "probe" || c.Target != "" || c.Spec != nil {
+		return runtimeagent.ErrDenied
+	}
+	e, err := f.backend(ctx, c)
+	if err != nil {
+		return err
+	}
+	defer e.close()
+	measured, ok := e.Enforcement.(*MeasuredEnforcement)
+	if !ok {
+		return runtimeagent.ErrUnsupported
+	}
+	return measured.recoverProbe(ctx, c, e)
+}
+
 func (f *Factory) StoppedServices(ctx context.Context, c runtimeagent.Command) ([]string, error) {
 	e, err := f.backend(ctx, c)
 	if err != nil {

@@ -1,5 +1,6 @@
 #!/bin/sh
 set -eu
+set +x
 [ -f /etc/m09-disposable-guest ]
 exec >/dev/ttyS0 2>&1
 finish() {
@@ -21,6 +22,13 @@ trap 'exit 1' TERM INT
 interface=$(ip -o link show | awk -F': ' '$2 != "lo" {print $2;exit}')
 ip addr add 192.0.2.10/24 dev "$interface"
 ip link set "$interface" up
+ip -6 addr add fd00:9::10/64 dev "$interface" nodad
+ip -6 route add fd00:ec2::254/128 via fd00:9::11 dev "$interface"
+ip -6 route add 2001:db8:100::10/128 via fd00:9::11 dev "$interface"
+# These two inert destination addresses live only on the disconnected peer VM.
+# No interface or route connects this lab to the host network or Internet.
+ip route add 169.254.169.254/32 via 192.0.2.11 dev "$interface"
+ip route add 203.0.113.10/32 via 192.0.2.11 dev "$interface"
 chmod 0666 /dev/net/tun /dev/fuse
 apparmor_parser -r /etc/apparmor.d/tap-runtime
 /usr/local/bin/tap-runtime-host
@@ -34,7 +42,7 @@ fi
 /usr/local/bin/tap-runtime-measure &
 measure_pid=$!
 for n in $(seq 1 20); do [ -S /run/tap-runtime/measure.sock ] && break; sleep 1; done
-/opt/m09/processlab enroll
+modprobe qemu_fw_cfg
 /opt/m09/processlab operator &
 agent_pid=$!
 # External lab orchestration powers down this exact VM after the controller's

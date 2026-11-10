@@ -36,6 +36,10 @@ func TestRecoveryPublishesUncertainIntentBeforeAnyResource(t *testing.T) {
 	if err = ledger.db.QueryRow("SELECT count(*) FROM candidate_capacity WHERE owner=?", c.ID).Scan(&charges); err != nil || charges != 1 {
 		t.Fatal("uncertain reservation released", charges, err)
 	}
+	owners, err := ledger.ResourceOwners(ctx)
+	if err != nil || len(owners) != 1 || owners[0].ID != c.ID {
+		t.Fatal("reservation without saved engine IDs disappeared from recovery", owners, err)
+	}
 	if err = ledger.RecoverPendingResults(ctx); err != nil {
 		t.Fatal("recovery not idempotent", err)
 	}

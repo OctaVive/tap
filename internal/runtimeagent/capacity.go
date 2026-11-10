@@ -75,7 +75,7 @@ func (l *Ledger) ReleaseCandidate(ctx context.Context, owner string) error {
 
 // ResourceOwners is bounded; an unexpectedly large ledger becomes an incident.
 func (l *Ledger) ResourceOwners(ctx context.Context) ([]Command, error) {
-	rows, err := l.db.QueryContext(ctx, "SELECT s.body FROM command_specs s WHERE EXISTS(SELECT 1 FROM resources r WHERE r.owner=s.command) ORDER BY s.command LIMIT 1025")
+	rows, err := l.db.QueryContext(ctx, "SELECT s.body FROM command_specs s WHERE EXISTS(SELECT 1 FROM resources r WHERE r.owner=s.command) OR EXISTS(SELECT 1 FROM candidate_capacity cc WHERE cc.owner=s.command) ORDER BY s.command LIMIT 1025")
 	if err != nil {
 		return nil, ErrLedger
 	}

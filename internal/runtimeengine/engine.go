@@ -147,7 +147,7 @@ func (e *Engine) Create(ctx context.Context, c runtimeagent.Command, check func(
 		Internal, EnableIPv6 bool
 		CheckDuplicate       bool
 		Labels, Options      map[string]string
-	}{Name: name, Driver: "bridge", Internal: true, CheckDuplicate: true, Labels: labels(c, ""), Options: map[string]string{"com.docker.network.bridge.enable_icc": "true"}}
+	}{Name: name, Driver: "bridge", Internal: true, EnableIPv6: true, CheckDuplicate: true, Labels: labels(c, ""), Options: map[string]string{"com.docker.network.bridge.enable_icc": "true"}}
 	if e.Client.call(ctx, "POST", "/networks/create", request, &network) != nil || !objectID.MatchString(network.ID) {
 		return runtimeagent.ErrUncertain
 	}

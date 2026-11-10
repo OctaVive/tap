@@ -228,7 +228,7 @@ func VerifyProcess(e Enrollment, pid int, limits ProcessLimits) (ProcessMeasurem
 	}
 	stage = "filesystems"
 	mounts, err := ReadSmall(proc+"/mountinfo", 65536)
-	if err != nil {
+	if err != nil || !readOnlyEngineFiles(mounts) {
 		return deny()
 	}
 	rootRO := false
@@ -287,6 +287,32 @@ func VerifyProcess(e Enrollment, pid int, limits ProcessLimits) (ProcessMeasurem
 		return deny()
 	}
 	return ProcessMeasurement{UserNamespace: ns, NetworkNamespace: containerNet, UIDMapHash: contracts.Digest(uidRaw), GIDMapHash: contracts.Digest(gidRaw), MAC: mac, Seccomp: 2, CgroupHash: contracts.Digest([]byte(cg)), TmpBytes: observedTmp["/tmp"], WritableBytes: observedTmp["/run"]}, nil
+}
+
+// Engine-managed etc files are bind mounts and may have a writable underlying
+// superblock. Check the per-mount flags observed by the workload, independently
+// of OCI configuration and nonroot file permissions. Ambiguous stacks fail shut.
+func readOnlyEngineFiles(mounts []byte) bool {
+	required := map[string]bool{"/etc/hosts": false, "/etc/hostname": false, "/etc/resolv.conf": false}
+	for _, line := range strings.Split(string(mounts), "\n") {
+		f := strings.Fields(line)
+		if len(f) < 7 {
+			continue
+		}
+		if seen, ok := required[f[4]]; ok {
+			flags := "," + f[5] + ","
+			if seen || !strings.Contains(flags, ",ro,") || strings.Contains(flags, ",rw,") || !strings.Contains(line, " - ") {
+				return false
+			}
+			required[f[4]] = true
+		}
+	}
+	for _, seen := range required {
+		if !seen {
+			return false
+		}
+	}
+	return true
 }
 
 // TmpfsSize parses the actual kernel superblock options from mountinfo. An

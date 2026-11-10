@@ -90,8 +90,17 @@ func (a *Authority) Current(ctx context.Context, c runtimeagent.Command) (outcom
 		return err
 	}
 	g, err := contracts.DecodeConfiguration[runtimeauthority.Grant](bytes.NewReader(raw))
-	if err != nil || !g.Matches(time.Now(), c) {
-		os.Stderr.WriteString("runtime_authority_grant_denied\n")
+	now := time.Now()
+	if err != nil || !g.Matches(now, c) {
+		code := "binding"
+		if err != nil {
+			code = "encoding"
+		} else if !g.ExpiresAt.After(now) {
+			code = "expired"
+		} else if g.ExpiresAt.After(now.Add(5 * time.Second)) {
+			code = "future"
+		}
+		os.Stderr.WriteString("runtime_authority_grant_" + code + "_denied\n")
 		return runtimeagent.ErrDenied
 	}
 	a.mu.Lock()

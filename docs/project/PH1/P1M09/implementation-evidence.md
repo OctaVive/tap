@@ -1,5 +1,17 @@
 # P1-M09 implementation evidence — incomplete increment
 
+Current reconciliation (2026-11-09): the earlier increments below are historical.
+App-scoped provisioning, measured enforcement, durable authorization and separate
+agent/controller process integration now exist, with single/two-service development
+lifecycles recorded in the operational handoff. The new recovery increment adds
+fixed private restart/fault orchestration, exact abandoned-probe cleanup and kernel
+readonly checks for engine-managed etc mounts. Full Go/vet and targeted races pass;
+real restart/crash verification is in progress. Fresh actual M07/M08 handoff cases
+passed on November 9. See [current execution plan](execution-plan.md) and
+[post-implementation validation](test-plan.md#post-implementation-validation--2026-11-09-recovery-increment).
+No required acceptance gate has been promoted; M09 remains INCOMPLETE.
+
+
 Status: **In progress; NOT PASSED**. [Acceptance report](testing/acceptance-report.md)
 and [test plan](test-plan.md) distinguish passing software from unfinished runtime
 acceptance. [Source hashes](testing/evidence-manifest.json) identify this working

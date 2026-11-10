@@ -37,6 +37,7 @@ const guestRoot = "/var/lib/m09-process"
 type fixture struct {
 	Scenario                                                  string `json:"scenario,omitempty"`
 	WorkerID, Incarnation, InventoryPublic, WorkerFingerprint string
+	RotationFingerprint                                       string
 	CertificateUntil                                          time.Time
 }
 type handoffImage struct {
@@ -71,6 +72,7 @@ func generate(dir string) {
 	must(os.Mkdir(dir, 0700))
 	must(os.Mkdir(filepath.Join(dir, "agent"), 0700))
 	must(os.Mkdir(filepath.Join(dir, "controller"), 0700))
+	must(os.Mkdir(filepath.Join(dir, "agent-rotation"), 0700))
 	caPub, caKey, e := ed25519.GenerateKey(rand.Reader)
 	must(e)
 	now := time.Now()
@@ -84,7 +86,7 @@ func generate(dir string) {
 		must(e)
 		c := &x509.Certificate{SerialNumber: big.NewInt(serial), Subject: pkix.Name{CommonName: name}, NotBefore: now.Add(-time.Minute), NotAfter: now.Add(4 * time.Hour), KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{usage}, URIs: []*url.URL{u}}
 		if usage == x509.ExtKeyUsageServerAuth {
-			c.IPAddresses = []net.IP{net.ParseIP("192.0.2.11")}
+			c.IPAddresses = []net.IP{net.ParseIP("192.0.2.11"), net.ParseIP("fd00:9::11")}
 			c.DNSNames = []string{"runtime-controller.m09.invalid"}
 		}
 		der, e := x509.CreateCertificate(rand.Reader, c, ca, pub, caKey)
@@ -93,6 +95,7 @@ func generate(dir string) {
 	}
 	server, serverKey := issue("runtime controller", "spiffe://tap/runtime-controller", 2, x509.ExtKeyUsageServerAuth)
 	agent, agentKey := issue("runtime agent", "spiffe://tap/runtime-agent/"+worker, 3, x509.ExtKeyUsageClientAuth)
+	rotated, rotatedKey := issue("runtime agent rotated", "spiffe://tap/runtime-agent/"+worker, 4, x509.ExtKeyUsageClientAuth)
 	reportPub, reportKey, e := ed25519.GenerateKey(rand.Reader)
 	must(e)
 	commandPub, commandKey, e := ed25519.GenerateKey(rand.Reader)
@@ -106,6 +109,7 @@ func generate(dir string) {
 		write(filepath.Join(p, "key.pem"), pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: raw}))
 	}
 	material("agent", agent, agentKey)
+	material("agent-rotation", rotated, rotatedKey)
 	material("controller", server, serverKey)
 	write(filepath.Join(dir, "agent/inventory.key"), []byte(base64.StdEncoding.EncodeToString(reportKey)))
 	write(filepath.Join(dir, "controller/command.key"), []byte(base64.StdEncoding.EncodeToString(commandKey)))
@@ -116,7 +120,7 @@ func generate(dir string) {
 	jsonFile(filepath.Join(dir, "controller/config.json"), map[string]any{"database": guestRoot + "/metadata.db", "artifacts": guestRoot + "/artifacts", "listen": "192.0.2.11:9443", "ca": guestRoot + "/ca.pem", "certificate": guestRoot + "/cert.pem", "key": guestRoot + "/key.pem", "command_keys": keys})
 	workerCert, e := x509.ParseCertificate(agent)
 	must(e)
-	jsonFile(filepath.Join(dir, "controller/fixture.json"), fixture{WorkerID: worker, Incarnation: worker, InventoryPublic: base64.StdEncoding.EncodeToString(reportPub), WorkerFingerprint: hash(agent), CertificateUntil: workerCert.NotAfter})
+	jsonFile(filepath.Join(dir, "controller/fixture.json"), fixture{WorkerID: worker, Incarnation: worker, InventoryPublic: base64.StdEncoding.EncodeToString(reportPub), WorkerFingerprint: hash(agent), RotationFingerprint: hash(rotated), CertificateUntil: workerCert.NotAfter})
 	fmt.Println("M09-PROCESS-TRUST-PREPARED")
 }
 func drive() {
@@ -129,6 +133,23 @@ func drive() {
 	defer cancel()
 	f := readJSON[fixture](guestRoot + "/fixture.json")
 	h := readJSON[handoff](guestRoot + "/handoff.json")
+	if f.Scenario == "network-ipv4" || f.Scenario == "network-dual-stack" {
+		matched := false
+		for i := range h.Spec.Services {
+			if f.Scenario == "network-dual-stack" && h.Spec.Services[i].Name == "db" {
+				h.Spec.Services[i].Entrypoint = nil
+				h.Spec.Services[i].Command = []string{"/bin/busybox", "httpd", "-f", "-p", "[::]:8081", "-h", "/srv"}
+			}
+			if h.Spec.Services[i].Name == "web" {
+				h.Spec.Services[i].Entrypoint = nil
+				h.Spec.Services[i].Command = []string{"/bin/busybox", "nc", "-ll", "-p", "8080", "-e", "/bin/busybox", "sh", "-c", networkWorkload}
+				matched = true
+			}
+		}
+		if !matched {
+			must(runtimeagent.ErrDenied)
+		}
+	}
 	enrollments := readJSON[struct {
 		Enrollments []runtimeisolation.Enrollment `json:"enrollments"`
 	}](guestRoot + "/enrollments.json").Enrollments
@@ -140,8 +161,10 @@ func drive() {
 	state, e := storage.Open(ctx, guestRoot+"/metadata.db")
 	must(e)
 	defer state.Close()
+	var leaseUntil time.Time
 	renew := func() {
-		must(state.EnrollRuntimeWorker(ctx, storage.RuntimeWorker{WorkerID: f.WorkerID, Incarnation: f.Incarnation, InventoryKey: ed25519.PublicKey(report), LeaseUntil: time.Now().Add(55 * time.Second)}))
+		leaseUntil = time.Now().Add(55 * time.Second)
+		must(state.EnrollRuntimeWorker(ctx, storage.RuntimeWorker{WorkerID: f.WorkerID, Incarnation: f.Incarnation, InventoryKey: ed25519.PublicKey(report), LeaseUntil: leaseUntil}))
 	}
 	renew()
 	must(state.EnrollRuntimeCertificate(ctx, f.WorkerID, f.Incarnation, f.WorkerFingerprint, f.CertificateUntil))
@@ -170,7 +193,12 @@ func drive() {
 	must(e)
 	defer db.Close()
 	createID := "66666666-6666-4666-8666-000000000002"
-	for i, operation := range []string{"probe", "create", "inspect", "logs", "stop", "inspect", "remove", "probe"} {
+	revoked := false
+	operations := []string{"probe", "create", "inspect", "logs", "stop", "inspect", "remove", "probe"}
+	if f.Scenario == "corrupt-archive" {
+		operations = []string{"probe", "create", "remove", "probe"}
+	}
+	for i, operation := range operations {
 		renew()
 		c := runtimeagent.Command{Version: 3, Operation: operation, ID: fmt.Sprintf("66666666-6666-4666-8666-%012d", i+1), WorkerID: f.WorkerID, Incarnation: f.Incarnation, AppID: h.Spec.AppID, DeploymentID: h.Spec.DeploymentID, Generation: 1, Nonce: fmt.Sprintf("%064x", i+1000), KeyID: "fixture", ExpiresAt: time.Now().UTC().Add(4 * time.Minute).Format(time.RFC3339Nano), PolicyHash: policy.Hash(), SpecHash: policy.SpecHash(h.Spec)}
 		if operation == "create" {
@@ -182,7 +210,22 @@ func drive() {
 			c.LogLimit = 4096
 		}
 		must(c.Sign(key))
+		if operation == "create" && isDenial(f.Scenario) {
+			awaitOperator(ctx, "verify-denial-baseline", "denial-baseline-confirmed")
+		}
+		if operation == "create" && f.Scenario == "deny-matrix" {
+			jsonFile(guestRoot+"/denial-case.json", denialMarker{Index: 0})
+		}
 		must(state.QueueRuntimeCommand(ctx, c, map[string]ed25519.PublicKey{"fixture": pub}))
+		if operation == "create" && isDenial(f.Scenario) {
+			if f.Scenario == "deny-matrix" {
+				runDenialMatrix(ctx)
+			} else {
+				waitDenialInjected(ctx)
+				awaitOperator(ctx, "verify-denial-after", "denial-after-confirmed")
+			}
+			write(guestRoot+"/denial-release", []byte("allow exact original valid signed command"))
+		}
 		nextRenew := time.Now().Add(15 * time.Second)
 		for {
 			if ctx.Err() != nil {
@@ -199,15 +242,95 @@ func drive() {
 				var result runtimeagent.Result
 				must(json.Unmarshal(raw, &result))
 				fmt.Printf("M09-PROCESS-RESULT operation=%s code=%s\n", operation, result.Code)
+				if i == 0 && f.Scenario == "probe-crash" {
+					if result.Code != "uncertain" || result.Inventory != nil {
+						must(runtimeagent.ErrDenied)
+					}
+					break
+				}
+				if operation == "create" && f.Scenario == "corrupt-archive" {
+					if result.Code != "uncertain" || result.Inventory != nil {
+						must(runtimeagent.ErrDenied)
+					}
+					awaitOperator(ctx, "verify-no-image-effects", "no-image-effects-confirmed")
+					break
+				}
 				if result.Code != "ok" {
 					must(runtimeagent.ErrDenied)
 				}
 				if operation == "probe" && result.Inventory == nil {
 					must(runtimeagent.ErrDenied)
 				}
+				if operation == "inspect" {
+					expected := "running"
+					if revoked || i > 2 {
+						expected = "stopped"
+					}
+					if result.State != expected {
+						must(runtimeagent.ErrDenied)
+					}
+					fmt.Printf("M09-PROCESS-STATE operation=inspect state=%s\n", result.State)
+				}
+				if operation == "create" {
+					if f.Scenario == "approval-revoke" || f.Scenario == "admission-revoke" || f.Scenario == "scan-policy-change" || f.Scenario == "lease-expiry" || f.Scenario == "certificate-revoke-rotate" {
+						awaitOperator(ctx, "verify-relay-live", "relay-live-confirmed")
+					}
+					switch f.Scenario {
+					case "lease-expiry":
+						timer := time.NewTimer(time.Until(leaseUntil) + 200*time.Millisecond)
+						select {
+						case <-timer.C:
+						case <-ctx.Done():
+							must(ctx.Err())
+						}
+						revoked = true
+					case "certificate-revoke-rotate":
+						must(state.RevokeRuntimeCertificate(ctx, f.WorkerFingerprint))
+						revoked = true
+					case "approval-revoke":
+						must(state.RevokeRuntimeApproval(ctx, h.Spec.AppID, 1))
+						revoked = true
+					case "admission-revoke":
+						must(state.RevokeRuntimeImage(ctx, h.Spec.Services[0].AdmissionID))
+						revoked = true
+					case "scan-policy-change":
+						next := h.Intent.Job.Policy
+						// A stricter current trusted scan policy invalidates the old
+						// exact admission; no immutable M07 record is rewritten.
+						next.DatabaseMaxAgeSeconds /= 2
+						must(state.SetRuntimeScanPolicy(ctx, next))
+						revoked = true
+					}
+					if revoked {
+						fmt.Println("M09-PROCESS-REVOKED", f.Scenario)
+						// The idle supervisor must stop/drain before any explicit stop
+						// command is queued. Inspect below proves its observed state.
+						awaitOperator(ctx, "verify-relay-removed", "relay-removed-confirmed")
+						if f.Scenario == "lease-expiry" || f.Scenario == "certificate-revoke-rotate" {
+							awaitOperator(ctx, "verify-owned-stopped", "owned-stopped-confirmed")
+							if f.Scenario == "certificate-revoke-rotate" {
+								must(state.EnrollRuntimeCertificate(ctx, f.WorkerID, f.Incarnation, f.RotationFingerprint, f.CertificateUntil))
+								awaitOperator(ctx, "rotate-agent-certificate", "certificate-provisioned")
+								fmt.Println("M09-PROCESS-CERTIFICATE-ROTATED")
+							}
+							renew()
+						}
+					}
+				}
 				if operation == "create" && f.Scenario == "agent-restart" {
-					fmt.Println("M09-PROCESS-REQUEST restart-agent")
-					time.Sleep(3 * time.Second)
+					awaitOperator(ctx, "restart-agent", "restart-complete")
+				}
+				if operation == "create" && (f.Scenario == "network-ipv4" || f.Scenario == "network-dual-stack") {
+					awaitOperator(ctx, "verify-relay-live", "relay-live-confirmed")
+					renew()
+					if f.Scenario == "network-dual-stack" {
+						awaitOperator(ctx, "verify-network-dual-stack", "network-dual-stack-confirmed")
+					} else {
+						awaitOperator(ctx, "verify-network-ipv4", "network-ipv4-confirmed")
+					}
+				}
+				if operation == "remove" && (f.Scenario == "network-ipv4" || f.Scenario == "network-dual-stack") {
+					awaitOperator(ctx, "verify-relay-removed", "relay-removed-confirmed")
 				}
 				break
 			}
@@ -232,9 +355,56 @@ func enroll() {
 	}
 	raw, e := json.Marshal(entries)
 	must(e)
-	fmt.Println("M09-PROCESS-ENROLLMENTS", string(raw))
+	fmt.Fprintln(operatorOutput, "M09-PROCESS-ENROLLMENTS", string(raw))
 }
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "initialize-controller-clock" {
+		control := labControl("/dev/ttyS1")
+		defer control.Close()
+		initializeVMClock(control, "controller")
+		return
+	}
+	if len(os.Args) == 2 && os.Args[1] == "observe-controller-clock" {
+		observeControllerClock()
+		return
+	}
+	if len(os.Args) == 2 && os.Args[1] == "capture-fixture6" {
+		captureFixture(false, true)
+		return
+	}
+	if len(os.Args) == 2 && os.Args[1] == "capture-fixture6-entered" {
+		captureFixture(true, true)
+		return
+	}
+	if len(os.Args) == 2 && os.Args[1] == "is-network" {
+		scenario := readJSON[fixture](guestRoot + "/fixture.json").Scenario
+		if scenario != "network-ipv4" && scenario != "network-dual-stack" {
+			os.Exit(1)
+		}
+		return
+	}
+	if len(os.Args) == 2 && os.Args[1] == "network-targets" {
+		networkTargets()
+		return
+	}
+	if len(os.Args) == 2 && os.Args[1] == "capture-fixture" {
+		captureFixture(false, false)
+		return
+	}
+	if len(os.Args) == 2 && os.Args[1] == "capture-fixture-entered" {
+		captureFixture(true, false)
+		return
+	}
+	if len(os.Args) == 2 && os.Args[1] == "is-denial" {
+		if !isDenial(readJSON[fixture](guestRoot + "/fixture.json").Scenario) {
+			os.Exit(1)
+		}
+		return
+	}
+	if len(os.Args) == 2 && os.Args[1] == "serve-denial" {
+		serveDenial()
+		return
+	}
 	if len(os.Args) == 2 && os.Args[1] == "operator" {
 		operator()
 		return
